@@ -1,0 +1,7 @@
+{
+  "name": "gpt-world-test-2",
+  "private": true,
+  "dependencies": {
+    "world-building-framework": "0.2.8"
+  }
+}

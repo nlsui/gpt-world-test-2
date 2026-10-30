@@ -1,0 +1,7 @@
+{
+  "title": "Gpt World Test 2",
+  "entityTypes": ["character", "location", "faction", "item", "species"],
+  "buildVariants": {
+    "wiki": {}
+  }
+}

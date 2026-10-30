@@ -1,0 +1,15 @@
+{
+  "frameworkVersion": "0.2.8",
+  "branch": "main",
+  "agents": [
+    "codex"
+  ],
+  "skillsDirs": [],
+  "files": {
+    ".github/workflows/publish.yml": "61042f102ede8e2c890be84675c58d487b3077c5504635c884bef56cbe6debb2",
+    "AGENTS.md": "2a18b48fff7872e063275c965deb635adbd4d112fe823737edc7a9b9d6c32159",
+    ".agents/skills/world-timelines/SKILL.md": "b5469a970c1a98deaee9b789aed2b56e09098ac4d1b085bbe5554ce2feb5c67c",
+    ".agents/skills/world-vault/SKILL.md": "876f304fa27bd79277872a55145e14dbcc38c2b3e3a1215be0ee38e55418f6eb",
+    ".codex/config.toml": "8e3ca3e600f38efe32ed46e14774d05b90084a393fdcc6c08d7748b37eff7cc9"
+  }
+}

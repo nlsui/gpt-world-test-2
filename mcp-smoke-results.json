@@ -1,0 +1,1163 @@
+[
+  {
+    "initialize": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {
+        "tools": {
+          "listChanged": true
+        }
+      },
+      "serverInfo": {
+        "name": "world-building-framework",
+        "version": "0.2.8"
+      },
+      "instructions": "This server reads and writes a world built with the World Building Framework: a vault of entity and event files, named by UUID. Use only these tools to read or change it; they validate everything before it's written.\n\nIf a tool says the folder isn't a world yet, offer to set it up, and once the user agrees, call `init` (with the world's name as title, if they gave one) and walk them through its nextSteps.\n\n1. Call `schema` before writing anything. It lists every field, its shape, this world's entity types, and an example input. An entity's `entityType` must be one of those types. If the world has none yet, or none that fits, suggest some, and add the ones the user agrees to with `configure`.\n2. Call `search` before creating something, to avoid duplicates and to get the UUIDs you link with.\n3. Links are always \"[[<uuid>|<current title>]]\", in frontmatter and in body text. Never a bare [[Name]].\n4. Before writing anything, work out the whole change: what to create or change, which linked files it affects, and whether each is a correction or a new version. Report that plan to the user in plain words, for all files at once (full content only if they ask), and wait for their OK. Then write everything with `create`/`update` (and `configure` for the world's settings) and report what was written, with any warnings.\n5. `update` is for corrections only (a typo, a wrong tag, a missing link). Call `read` first and send the file's complete new content: any field you leave out is removed. Changing a title rewrites links showing the old title in other files.\n6. `read` also returns linkedFrom: every file linking to this one, grouped by field. Before a change, use it to judge which of those files the change affects, and open only those; you decide what's relevant.\n7. A change in the story is never an update. Create a new entity file with `supersedes` (a link to the entity's latest version) and `causedBy` (a link to the event that caused the change). Other files keep linking to the entity's first file.\n8. Each published wiki (see `list_variants`) includes or leaves out whole files by their tags, and shows an included file in full. Keep secrets in their own files with narrower tags, never in the text of a file a wider audience sees.\n9. To answer a question about the world, use only its files: `search`, `read`, and follow the links that matter (including linkedFrom). Name the file each statement comes from (title and id). If the world doesn't establish something, say so; mark your own ideas as suggestions. Say which point in time an answer is about, since entities change through versions. For what one audience knows (e.g. players), use only files that wiki includes (`list_variants`).\n10. Timeline pages are defined in world.config.json under \"timelines\" (boundaries: dateRange, tags, entities, from, to; plus title and wikis). Propose a definition in plain words, add it with `configure` once the user agrees, then show them what `timelines` picks.\n11. `configure` changes world.config.json: the world's title, entityTypes, buildVariants (the wikis) and timelines. Each one you send replaces that setting as a whole, so call `configure` with nothing first to see the current settings, and send the complete new value. It refuses a change that would break existing files, e.g. removing an entity type files still use.\n\nErrors in a result block a write; warnings don't, but mention them to the user."
+    }
+  },
+  {
+    "tools": {
+      "tools": [
+        {
+          "name": "init",
+          "title": "Set up a world",
+          "description": "Sets this server's folder up as a world: package.json (with this framework version), world.config.json, package-lock.json, the GitHub Pages workflow and more. Never overwrites an existing file, so it's safe to call again. Returns what it created and the user's next steps. Only after the user agreed.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "title": {
+                "description": "The world's name, shown on every wiki page; defaults to one made from the folder name",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "schema",
+          "title": "Show the file schema",
+          "description": "Every frontmatter field with its shape and whether it's required, this world's entityType list, and example inputs for create. Call it before writing anything.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "search",
+          "title": "Search the world",
+          "description": "Keyword search over titles, aliases and text. Each result has the file's id (the UUID you link with), title and score, and for entities entityType and tags.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "query": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Search terms"
+              },
+              "tags": {
+                "description": "Only files carrying all of these tags",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "limit": {
+                "description": "Maximum number of results",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "query"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "read",
+          "title": "Read a file",
+          "description": "One file's id, frontmatter and body, plus linkedFrom: every file linking to it, grouped by the field the link sits in (body = mentions in other files' text). Call it before update, which needs the file's complete new content, and use linkedFrom to judge which other files a change affects.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The file's UUID"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "validate",
+          "title": "Validate",
+          "description": "Checks without writing anything. With frontmatter (and body): a candidate file, exactly as create would check it. With id: one existing file. With neither: the whole world.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "description": "Check one existing file",
+                "type": "string"
+              },
+              "frontmatter": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {},
+                "description": "The file's frontmatter fields. See the schema tool."
+              },
+              "body": {
+                "description": "Markdown body text. Links inside it use the same [[<uuid>|Title]] form.",
+                "type": "string"
+              }
+            }
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "create",
+          "title": "Create a file",
+          "description": "Creates a new entity or event file under a new UUID, after the same checks as validate; on any error nothing is written. Returns the new id. Only after the user approved your plan.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "frontmatter": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {},
+                "description": "The file's frontmatter fields. See the schema tool."
+              },
+              "body": {
+                "description": "Markdown body text. Links inside it use the same [[<uuid>|Title]] form.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frontmatter"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "update",
+          "title": "Correct a file",
+          "description": "Replaces an existing file's whole content, for corrections only; a change in the story is a new version (create with supersedes and causedBy). Call read first and send the complete content: fields you leave out are removed. type can't change. A changed title is also rewritten in other files' links. Only after the user approved your plan.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The file's UUID"
+              },
+              "frontmatter": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {},
+                "description": "The file's frontmatter fields. See the schema tool."
+              },
+              "body": {
+                "description": "Markdown body text. Links inside it use the same [[<uuid>|Title]] form.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "frontmatter"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "list_variants",
+          "title": "List the wikis",
+          "description": "The build variants in world.config.json, by name: one published wiki each, e.g. a player wiki and a GM wiki. A file is in a wiki if it carries all of the variant's tags (and, for events, its date is inside the dateRange); {} includes everything. Use it to see which audiences a file's tags reach.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "timelines",
+          "title": "Check the timelines",
+          "description": "The timelines declared in world.config.json, each with the events it picks (earliest first) and any broken references. With variant, only the events that wiki shows. Use it to check a timeline definition; change one with configure.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "name": {
+                "description": "Only this timeline",
+                "type": "string"
+              },
+              "variant": {
+                "description": "Only the events this wiki (build variant) shows",
+                "type": "string"
+              }
+            }
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "update_framework",
+          "title": "Update the framework",
+          "description": "Moves the world to the framework version this server runs: sets it in package.json, rewrites package-lock.json, and brings the files the framework generated (publish workflow, AGENTS.md, skills) up to date, leaving files the user edited alone. The published wiki is built with that version after the next push. Refuses to go back to an older version. Only after the user agreed.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {}
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "configure",
+          "title": "Change the world's settings",
+          "description": "Changes world.config.json. Each setting you send replaces that setting as a whole; ones you leave out stay. Send nothing to get the current settings without changing anything. Checked first: the settings' shape, then every file and timeline against the new settings; a change that would break something that worked (e.g. removing an entity type files use) is refused and nothing is written. Only after the user approved your plan.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "title": {
+                "description": "The world's name, shown on every wiki page",
+                "type": "string",
+                "minLength": 1
+              },
+              "entityTypes": {
+                "description": "The complete list of entity types, e.g. [\"character\", \"location\", \"faction\"]",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "buildVariants": {
+                "description": "All wikis by name, each with optional tags (a file must carry all of them) and dateRange; {} includes everything",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dateRange": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "object",
+                          "properties": {
+                            "year": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "day": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "year"
+                          ]
+                        },
+                        "to": {
+                          "type": "object",
+                          "properties": {
+                            "year": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "day": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "year"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "timelines": {
+                "description": "All timelines by name, each with optional boundaries (dateRange, tags, entities, from, to), title and wikis",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "dateRange": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "object",
+                          "properties": {
+                            "year": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "day": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "year"
+                          ]
+                        },
+                        "to": {
+                          "type": "object",
+                          "properties": {
+                            "year": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "day": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "year"
+                          ]
+                        }
+                      }
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "entities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "from": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "wikis": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    }
+  },
+  {
+    "tool": "schema",
+    "arguments": {},
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "\"Common fields (every file):\\n  - type (\\\"entity\\\" or \\\"event\\\", required): Top-level kind.\\n  - title (string, required): Human-readable display name (filenames are UUIDs, this is the real name).\\n  - tags (list of strings, optional): Project-defined tags used for build-time filtering.\\n  - aliases (list of strings, optional): Alternate names/spellings, for search recall and Obsidian autocomplete only — not used for link resolution.\\n\\nEntity-only fields:\\n  - entityType (string, optional): Category (e.g. character, location). Must be one of this world's entity types, declared in world.config.json.\\n  - supersedes (link, optional): Marks this file as a new version of an existing entity — points at the file it replaces.\\n  - causedBy (link, optional): The event responsible for this version existing. Required alongside supersedes, and vice versa.\\n\\nEvent-only fields:\\n  - after (list of links, optional): Causal predecessor event(s) — the required ordering/branching backbone.\\n  - date ({ year: integer, day: integer }, optional): In-world date anchor. Give both year and day.\\n  - entities (list of links, optional): The entities this event is tied to.\\n\\nA link is a string \\\"[[uuid|Display Name]]\\\". A list field takes a list even for one link: after: [\\\"[[uuid|Name]]\\\"].\\nAny other frontmatter field whose value is a link is automatically a relation.\\n\\nThis world's entity types: character, location, faction, item, species\\n\\nExample input for `wbf create` (replace the UUIDs with real ids, e.g. from `wbf search`):\\n  entity: {\\\"frontmatter\\\":{\\\"type\\\":\\\"entity\\\",\\\"entityType\\\":\\\"character\\\",\\\"title\\\":\\\"Alea Marrow\\\",\\\"tags\\\":[\\\"player\\\"],\\\"home\\\":\\\"[[66a7bd3f-a744-4565-acbe-006957625792|Port Kavas]]\\\"},\\\"body\\\":\\\"Captain of the *Gull*.\\\"}\\n  event:  {\\\"frontmatter\\\":{\\\"type\\\":\\\"event\\\",\\\"title\\\":\\\"The Great Storm\\\",\\\"date\\\":{\\\"year\\\":150,\\\"day\\\":200},\\\"after\\\":[\\\"[[bb1ddebd-3a7c-4b6c-847a-b4de59a71e66|Alea takes command of the Gull]]\\\"],\\\"entities\\\":[\\\"[[adfdd8db-0bf1-4053-928f-52709232859f|Alea Marrow]]\\\"]},\\\"body\\\":\\\"A three-day storm floods the lower docks.\\\"}\""
+        }
+      ]
+    }
+  },
+  {
+    "tool": "configure",
+    "arguments": {},
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": false,\n  \"config\": {\n    \"title\": \"Gpt World Test 2\",\n    \"entityTypes\": [\n      \"character\",\n      \"location\",\n      \"faction\",\n      \"item\",\n      \"species\"\n    ],\n    \"buildVariants\": {\n      \"wiki\": {}\n    }\n  }\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "list_variants",
+    "arguments": {},
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"wiki\": {}\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "Lanternfolk"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Lanternfolk",
+        "tags": [
+          "test"
+        ],
+        "entityType": "species"
+      },
+      "body": "A test species whose fingertips glow when they recall a promise."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Lanternfolk",
+        "tags": [
+          "test"
+        ],
+        "entityType": "species"
+      },
+      "body": "A test species whose fingertips glow when they recall a promise."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"f920fa7e-5081-4ba2-8295-73003607ed64\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\f920fa7e-5081-4ba2-8295-73003607ed64.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "Port Lumen"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Port Lumen",
+        "tags": [
+          "test"
+        ],
+        "entityType": "location"
+      },
+      "body": "A test harbour built around a dark lighthouse."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Port Lumen",
+        "tags": [
+          "test"
+        ],
+        "entityType": "location"
+      },
+      "body": "A test harbour built around a dark lighthouse."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"a1b4bc8d-77d7-44c0-932a-aec0acb7eba2\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\a1b4bc8d-77d7-44c0-932a-aec0acb7eba2.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "Beacon Guild"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Beacon Guild",
+        "tags": [
+          "test"
+        ],
+        "entityType": "faction",
+        "headquarters": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]"
+      },
+      "body": "Maintains the harbour lighthouse and rescues lost sailors."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Beacon Guild",
+        "tags": [
+          "test"
+        ],
+        "entityType": "faction",
+        "headquarters": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]"
+      },
+      "body": "Maintains the harbour lighthouse and rescues lost sailors."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"8304d95e-8c7e-4626-a90b-5b0683b35265\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\8304d95e-8c7e-4626-a90b-5b0683b35265.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "Mira Vale"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Mira Vale",
+        "tags": [
+          "test"
+        ],
+        "entityType": "character",
+        "species": "[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]",
+        "home": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+        "faction": "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]"
+      },
+      "body": "An apprentice keeper determined to restore the beacon."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Mira Vale",
+        "tags": [
+          "test"
+        ],
+        "entityType": "character",
+        "species": "[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]",
+        "home": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+        "faction": "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]"
+      },
+      "body": "An apprentice keeper determined to restore the beacon."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\dbbd7e52-6009-432c-8f48-b32545e2502a.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "Dawn Lens"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Dawn Lens",
+        "tags": [
+          "test"
+        ],
+        "entityType": "item",
+        "keeper": "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+        "location": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]"
+      },
+      "body": "A crystal lens that can rekindle the harbour beacon."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Dawn Lens",
+        "tags": [
+          "test"
+        ],
+        "entityType": "item",
+        "keeper": "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+        "location": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]"
+      },
+      "body": "A crystal lens that can rekindle the harbour beacon."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\b37b3edb-1f75-4b9d-b11c-52daafe835f3.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "The Beacon Goes Dark"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Beacon Goes Dark",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 1
+        },
+        "entities": [
+          "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+          "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]"
+        ]
+      },
+      "body": "A storm extinguishes the beacon and closes the harbour."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Beacon Goes Dark",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 1
+        },
+        "entities": [
+          "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+          "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]"
+        ]
+      },
+      "body": "A storm extinguishes the beacon and closes the harbour."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "The Dawn Lens Is Recovered"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Dawn Lens Is Recovered",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 3
+        },
+        "after": [
+          "[[bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3|The Beacon Goes Dark]]"
+        ],
+        "entities": [
+          "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+          "[[b37b3edb-1f75-4b9d-b11c-52daafe835f3|Dawn Lens]]"
+        ]
+      },
+      "body": "Mira recovers the lens from a flooded storeroom."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Dawn Lens Is Recovered",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 3
+        },
+        "after": [
+          "[[bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3|The Beacon Goes Dark]]"
+        ],
+        "entities": [
+          "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+          "[[b37b3edb-1f75-4b9d-b11c-52daafe835f3|Dawn Lens]]"
+        ]
+      },
+      "body": "Mira recovers the lens from a flooded storeroom."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"8631e752-6f2f-4f12-afce-558fe9ea6e08\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\8631e752-6f2f-4f12-afce-558fe9ea6e08.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "The Beacon Is Relit"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Beacon Is Relit",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 4
+        },
+        "after": [
+          "[[8631e752-6f2f-4f12-afce-558fe9ea6e08|The Dawn Lens Is Recovered]]"
+        ],
+        "entities": [
+          "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+          "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]",
+          "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+          "[[b37b3edb-1f75-4b9d-b11c-52daafe835f3|Dawn Lens]]"
+        ]
+      },
+      "body": "Mira restores the beacon and is appointed harbour keeper."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "event",
+        "title": "The Beacon Is Relit",
+        "tags": [
+          "test"
+        ],
+        "date": {
+          "year": 100,
+          "day": 4
+        },
+        "after": [
+          "[[8631e752-6f2f-4f12-afce-558fe9ea6e08|The Dawn Lens Is Recovered]]"
+        ],
+        "entities": [
+          "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+          "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]",
+          "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+          "[[b37b3edb-1f75-4b9d-b11c-52daafe835f3|Dawn Lens]]"
+        ]
+      },
+      "body": "Mira restores the beacon and is appointed harbour keeper."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "read",
+    "arguments": {
+      "id": "dbbd7e52-6009-432c-8f48-b32545e2502a"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n  \"frontmatter\": {\n    \"type\": \"entity\",\n    \"title\": \"Mira Vale\",\n    \"tags\": [\n      \"test\"\n    ],\n    \"entityType\": \"character\",\n    \"species\": \"[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]\",\n    \"home\": \"[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]\",\n    \"faction\": \"[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]\"\n  },\n  \"body\": \"An apprentice keeper determined to restore the beacon.\\n\",\n  \"linkedFrom\": {\n    \"entities\": [\n      {\n        \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n        \"title\": \"The Beacon Is Relit\",\n        \"type\": \"event\"\n      },\n      {\n        \"id\": \"8631e752-6f2f-4f12-afce-558fe9ea6e08\",\n        \"title\": \"The Dawn Lens Is Recovered\",\n        \"type\": \"event\"\n      }\n    ],\n    \"keeper\": [\n      {\n        \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n        \"title\": \"Dawn Lens\",\n        \"type\": \"entity\",\n        \"entityType\": \"item\"\n      }\n    ]\n  }\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Mira Vale",
+        "entityType": "character",
+        "tags": [
+          "test"
+        ],
+        "species": "[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]",
+        "home": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+        "faction": "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]",
+        "supersedes": "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+        "causedBy": "[[3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f|The Beacon Is Relit]]"
+      },
+      "body": "Now harbour keeper of Port Lumen, Mira leads the Beacon Guild rescue watches."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": true,\n  \"issues\": []\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "create",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Mira Vale",
+        "entityType": "character",
+        "tags": [
+          "test"
+        ],
+        "species": "[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]",
+        "home": "[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]",
+        "faction": "[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]",
+        "supersedes": "[[dbbd7e52-6009-432c-8f48-b32545e2502a|Mira Vale]]",
+        "causedBy": "[[3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f|The Beacon Is Relit]]"
+      },
+      "body": "Now harbour keeper of Port Lumen, Mira leads the Beacon Guild rescue watches."
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"written\": true,\n  \"id\": \"082d6409-28fa-482a-b7dd-312657e2c4d6\",\n  \"path\": \"C:\\\\Users\\\\Marius Standard\\\\workspace\\\\smooth-sloperator\\\\worlds\\\\gpt-world-test-2\\\\082d6409-28fa-482a-b7dd-312657e2c4d6.md\"\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "read",
+    "arguments": {
+      "id": "a1b4bc8d-77d7-44c0-932a-aec0acb7eba2"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"id\": \"a1b4bc8d-77d7-44c0-932a-aec0acb7eba2\",\n  \"frontmatter\": {\n    \"type\": \"entity\",\n    \"title\": \"Port Lumen\",\n    \"tags\": [\n      \"test\"\n    ],\n    \"entityType\": \"location\"\n  },\n  \"body\": \"A test harbour built around a dark lighthouse.\\n\",\n  \"linkedFrom\": {\n    \"entities\": [\n      {\n        \"id\": \"bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3\",\n        \"title\": \"The Beacon Goes Dark\",\n        \"type\": \"event\"\n      },\n      {\n        \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n        \"title\": \"The Beacon Is Relit\",\n        \"type\": \"event\"\n      }\n    ],\n    \"headquarters\": [\n      {\n        \"id\": \"8304d95e-8c7e-4626-a90b-5b0683b35265\",\n        \"title\": \"Beacon Guild\",\n        \"type\": \"entity\",\n        \"entityType\": \"faction\"\n      }\n    ],\n    \"home\": [\n      {\n        \"id\": \"082d6409-28fa-482a-b7dd-312657e2c4d6\",\n        \"title\": \"Mira Vale\",\n        \"type\": \"entity\",\n        \"entityType\": \"character\"\n      },\n      {\n        \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n        \"title\": \"Mira Vale\",\n        \"type\": \"entity\",\n        \"entityType\": \"character\"\n      }\n    ],\n    \"location\": [\n      {\n        \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n        \"title\": \"Dawn Lens\",\n        \"type\": \"entity\",\n        \"entityType\": \"item\"\n      }\n    ]\n  }\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "read",
+    "arguments": {
+      "id": "dbbd7e52-6009-432c-8f48-b32545e2502a"
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n  \"frontmatter\": {\n    \"type\": \"entity\",\n    \"title\": \"Mira Vale\",\n    \"tags\": [\n      \"test\"\n    ],\n    \"entityType\": \"character\",\n    \"species\": \"[[f920fa7e-5081-4ba2-8295-73003607ed64|Lanternfolk]]\",\n    \"home\": \"[[a1b4bc8d-77d7-44c0-932a-aec0acb7eba2|Port Lumen]]\",\n    \"faction\": \"[[8304d95e-8c7e-4626-a90b-5b0683b35265|Beacon Guild]]\"\n  },\n  \"body\": \"An apprentice keeper determined to restore the beacon.\\n\",\n  \"linkedFrom\": {\n    \"entities\": [\n      {\n        \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n        \"title\": \"The Beacon Is Relit\",\n        \"type\": \"event\"\n      },\n      {\n        \"id\": \"8631e752-6f2f-4f12-afce-558fe9ea6e08\",\n        \"title\": \"The Dawn Lens Is Recovered\",\n        \"type\": \"event\"\n      }\n    ],\n    \"keeper\": [\n      {\n        \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n        \"title\": \"Dawn Lens\",\n        \"type\": \"entity\",\n        \"entityType\": \"item\"\n      }\n    ],\n    \"supersedes\": [\n      {\n        \"id\": \"082d6409-28fa-482a-b7dd-312657e2c4d6\",\n        \"title\": \"Mira Vale\",\n        \"type\": \"entity\",\n        \"entityType\": \"character\"\n      }\n    ]\n  }\n}"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {
+      "frontmatter": {
+        "type": "entity",
+        "title": "Invalid test candidate",
+        "entityType": "charcter"
+      }
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"valid\": false,\n  \"issues\": [\n    {\n      \"path\": \"entityType\",\n      \"message\": \"\\\"charcter\\\" isn't one of this world's entity types (character, location, faction, item, species). Use one of them, or add it to \\\"entityTypes\\\" in world.config.json.\",\n      \"severity\": \"error\"\n    }\n  ]\n}"
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "tool": "validate",
+    "arguments": {},
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[\n  {\n    \"id\": \"082d6409-28fa-482a-b7dd-312657e2c4d6\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"8304d95e-8c7e-4626-a90b-5b0683b35265\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"8631e752-6f2f-4f12-afce-558fe9ea6e08\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"a1b4bc8d-77d7-44c0-932a-aec0acb7eba2\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n    \"valid\": true,\n    \"issues\": []\n  },\n  {\n    \"id\": \"f920fa7e-5081-4ba2-8295-73003607ed64\",\n    \"valid\": true,\n    \"issues\": []\n  }\n]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "timelines",
+    "arguments": {},
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[]"
+        }
+      ]
+    }
+  },
+  {
+    "tool": "search",
+    "arguments": {
+      "query": "beacon",
+      "tags": [
+        "test"
+      ]
+    },
+    "response": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[\n  {\n    \"id\": \"3e19ae6b-de8e-423b-99c3-6bc5f16a8e4f\",\n    \"score\": 0.0000018258503401360545,\n    \"title\": \"The Beacon Is Relit\",\n    \"tags\": [\n      \"test\"\n    ]\n  },\n  {\n    \"id\": \"bcbdc3a3-4fce-4738-8b38-2e0cee1bf1d3\",\n    \"score\": 0.0000018258503401360545,\n    \"title\": \"The Beacon Goes Dark\",\n    \"tags\": [\n      \"test\"\n    ]\n  },\n  {\n    \"id\": \"8304d95e-8c7e-4626-a90b-5b0683b35265\",\n    \"score\": 0.000001804248453885453,\n    \"title\": \"Beacon Guild\",\n    \"entityType\": \"faction\",\n    \"tags\": [\n      \"test\"\n    ]\n  },\n  {\n    \"id\": \"dbbd7e52-6009-432c-8f48-b32545e2502a\",\n    \"score\": 0.0000010492572322126662,\n    \"title\": \"Mira Vale\",\n    \"entityType\": \"character\",\n    \"tags\": [\n      \"test\"\n    ]\n  },\n  {\n    \"id\": \"b37b3edb-1f75-4b9d-b11c-52daafe835f3\",\n    \"score\": 0.0000010170519136036377,\n    \"title\": \"Dawn Lens\",\n    \"entityType\": \"item\",\n    \"tags\": [\n      \"test\"\n    ]\n  },\n  {\n    \"id\": \"082d6409-28fa-482a-b7dd-312657e2c4d6\",\n    \"score\": 9.058386770165373e-7,\n    \"title\": \"Mira Vale\",\n    \"entityType\": \"character\",\n    \"tags\": [\n      \"test\"\n    ]\n  }\n]"
+        }
+      ]
+    }
+  }
+]
